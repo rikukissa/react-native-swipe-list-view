@@ -16,6 +16,9 @@ import {
 const DIRECTIONAL_DISTANCE_CHANGE_THRESHOLD = 2;
 const PREVIEW_OPEN_DELAY = 700;
 const PREVIEW_CLOSE_DELAY = 300;
+function elastic(value, elasticity = 30) {
+	return elasticity * Math.log(value + elasticity) - elasticity * Math.log(elasticity);
+}
 
 /**
  * Row that is generally used in a SwipeListView.
@@ -89,11 +92,12 @@ class SwipeRow extends Component {
 
 	handleOnMoveShouldSetPanResponder(e, gs) {
 		const { dx } = gs;
+
 		return Math.abs(dx) > DIRECTIONAL_DISTANCE_CHANGE_THRESHOLD;
 	}
 
 	handlePanResponderMove(e, gestureState) {
-		const { dx, dy } = gestureState;
+		const { dx, dy, vx } = gestureState;
 		const absDx = Math.abs(dx);
 		const absDy = Math.abs(dy);
 
@@ -120,21 +124,59 @@ class SwipeRow extends Component {
 			this.horizontalSwipeGestureBegan = true;
 
 			let newDX = this.swipeInitialX + dx;
+			// Disabled swipe
 			if (this.props.disableLeftSwipe  && newDX < 0) { newDX = 0; }
-			if (this.props.disableRightSwipe && newDX > 0) { newDX = 0; }
+			else if (this.props.disableRightSwipe && newDX > 0) { newDX = 0; }
+			// Maximum swipe distance
+			else if (this.props.maxLeftSwipeDistance && newDX > this.props.maxLeftSwipeDistance) {
+				if (this.props.elasticOverscroll) {
+					newDX = this.props.maxLeftSwipeDistance + elastic(newDX - this.props.maxLeftSwipeDistance);
 
+					if (this.onOverscrollLeft && newDX > this.props.maxLeftSwipeDistance + this.props.overscrollDistanceLeft) {
+						this.onOverscrollLeft()
+					}
 
-			if (this.props.stopLeftSwipe && newDX > this.props.stopLeftSwipe) { newDX = this.props.stopLeftSwipe; }
-			if (this.props.stopRightSwipe && newDX < this.props.stopRightSwipe) { newDX = this.props.stopRightSwipe; }
+				}
+				else {
+					newDX = this.props.maxLeftSwipeDistance;
+				}
+			}
+			else if (this.props.maxRightSwipeDistance && newDX < this.props.maxRightSwipeDistance) {
+				if (this.props.elasticOverscroll) {
+					newDX = this.props.maxRightSwipeDistance - elastic(this.props.maxRightSwipeDistance - newDX);
+
+					if (this.onOverscrollRight && newDX < -this.props.maxRightSwipeDistance + this.props.overScrollDistanceRight) {
+						this.onOverscrollRight()
+					}
+
+				}
+				else {
+					newDX = this.props.maxRightSwipeDistance;
+				}
+			}
+
+			if (this.props.onFastSwipeLeft && newDX < 0 && vx >= this.props.fastSwipeVelocity) {
+				this.props.onFastSwipeLeft(newDX, vx);
+				newDX = 0;
+			} else if (this.props.onFastSwipeRight && newDX > 0 && vx >= this.props.fastSwipeVelocity) {
+				newDX = this.state.hiddenWidth;
+				this.props.onFastSwipeRight(newDX, vx);
+			}
 
 			this.setState({
 				translateX: new Animated.Value(newDX)
 			});
 
+			this.props.onRowMove(newDX);
 		}
 	}
 
 	handlePanResponderEnd(e, gestureState) {
+		const { dx, dy, vx } = gestureState;
+		const newDX = this.swipeInitialX + dx;
+
+		this.props.onRowMoveEnd(newDX);
+
 		// re-enable scrolling on listView parent
 		if (!this.parentScrollEnabled) {
 			this.parentScrollEnabled = true;
@@ -143,15 +185,20 @@ class SwipeRow extends Component {
 
 		// finish up the animation
 		let toValue = 0;
+
+		// trying to open right
 		if (this.state.translateX._value >= 0) {
-			// trying to open right
-			if (this.state.translateX._value > this.props.leftOpenValue / 2) {
+			if(this.state.translateX._value > this.props.maxLeftSwipeDistance) {
+				toValue = this.state.hiddenWidth;
+		  } else if (this.state.translateX._value > this.props.leftOpenValue / 2) {
 				// we're more than halfway
 				toValue = this.props.leftOpenValue;
 			}
 		} else {
 			// trying to open left
-			if (this.state.translateX._value < this.props.rightOpenValue / 2) {
+			if(this.state.translateX._value < this.props.maxRightSwipeDistance) {
+				toValue = -this.state.hiddenWidth;
+			} else if (this.state.translateX._value < this.props.rightOpenValue / 2) {
 				// we're more than halfway
 				toValue = this.props.rightOpenValue
 			}
@@ -380,6 +427,7 @@ SwipeRow.defaultProps = {
 	disableRightSwipe: false,
 	recalculateHiddenLayout: false,
 	preview: false,
+	fastSwipeVelocity: 2.5,
 	previewDuration: 300
 };
 
