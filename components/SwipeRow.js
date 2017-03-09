@@ -38,6 +38,7 @@ class SwipeRow extends Component {
 		this.swipeInitialX = null;
 		this.parentScrollEnabled = true;
 		this.ranPreview = false;
+		this.fastSwiped = false;
 		this.state = {
 			dimensionsSet: false,
 			hiddenHeight: 0,
@@ -97,9 +98,14 @@ class SwipeRow extends Component {
 	}
 
 	handlePanResponderMove(e, gestureState) {
+
 		const { dx, dy, vx } = gestureState;
 		const absDx = Math.abs(dx);
 		const absDy = Math.abs(dy);
+
+		if(this.fastSwiped) {
+			return;
+		}
 
 		// this check may not be necessary because we don't capture the move until we pass the threshold
 		// just being extra safe here
@@ -129,48 +135,49 @@ class SwipeRow extends Component {
 			else if (this.props.disableRightSwipe && newDX > 0) { newDX = 0; }
 			// Maximum swipe distance
 			else if (this.props.maxLeftSwipeDistance && newDX > this.props.maxLeftSwipeDistance) {
-				if (this.props.elasticOverscroll) {
-					newDX = this.props.maxLeftSwipeDistance + elastic(newDX - this.props.maxLeftSwipeDistance);
-
-					if (this.onOverscrollLeft && newDX > this.props.maxLeftSwipeDistance + this.props.overscrollDistanceLeft) {
-						this.onOverscrollLeft()
-					}
-
-				}
-				else {
-					newDX = this.props.maxLeftSwipeDistance;
-				}
+				newDX = this.props.maxLeftSwipeDistance;
 			}
 			else if (this.props.maxRightSwipeDistance && newDX < this.props.maxRightSwipeDistance) {
-				if (this.props.elasticOverscroll) {
-					newDX = this.props.maxRightSwipeDistance - elastic(this.props.maxRightSwipeDistance - newDX);
-
-					if (this.onOverscrollRight && newDX < -this.props.maxRightSwipeDistance + this.props.overScrollDistanceRight) {
-						this.onOverscrollRight()
-					}
-
-				}
-				else {
-					newDX = this.props.maxRightSwipeDistance;
-				}
+				newDX = this.props.maxRightSwipeDistance;
 			}
 
-			if (this.props.onFastSwipeLeft && newDX < 0 && vx >= this.props.fastSwipeVelocity) {
+			if (this.props.onFastSwipeLeft && newDX < 0 && vx <= this.props.fastSwipeVelocity * -1) {
+				newDX = this.props.rightOpenValue;
 				this.props.onFastSwipeLeft(newDX, vx);
-				newDX = 0;
-			} else if (this.props.onFastSwipeRight && newDX > 0 && vx >= this.props.fastSwipeVelocity) {
-				newDX = this.state.hiddenWidth;
-				this.props.onFastSwipeRight(newDX, vx);
-			}
+				this.springTo(newDX);
+				this.fastSwiped = true;
 
-			this.setState({
-				translateX: new Animated.Value(newDX)
-			});
+			} else if (this.props.onFastSwipeRight && newDX > 0 && vx >= this.props.fastSwipeVelocity) {
+				newDX = this.props.leftOpenValue;
+				this.props.onFastSwipeRight(newDX, vx);
+				this.springTo(newDX);
+				this.fastSwiped = true;
+			// Reverse
+			} else if (this.props.onFastSwipeReverseLeft && newDX > 0 && vx <= this.props.fastSwipeVelocity * -1) {
+				newDX = 0;
+				this.props.onFastSwipeReverseLeft(newDX, vx);
+				this.springTo(newDX);
+				this.fastSwiped = true;
+
+			} else if (this.props.onFastSwipeReverseRight && newDX < 0 && vx >= this.props.fastSwipeVelocity) {
+				newDX = 0;
+				this.props.onFastSwipeReverseRight(newDX, vx);
+				this.springTo(newDX);
+				this.fastSwiped = true;
+			} else {
+				this.state.translateX.setValue(newDX);
+			}
 
 			this.props.onRowMove(newDX);
 		}
 	}
-
+	springTo(value) {
+		Animated.spring(this.state.translateX, {
+			toValue: value,
+			friction: 10,
+			tension: 100,
+		}).start();
+	}
 	handlePanResponderEnd(e, gestureState) {
 		const { dx, dy, vx } = gestureState;
 		const newDX = this.swipeInitialX + dx;
@@ -215,6 +222,15 @@ class SwipeRow extends Component {
 	}
 
 	manuallySwipeRow(toValue) {
+		// reset everything
+		this.swipeInitialX = null;
+		this.horizontalSwipeGestureBegan = false;
+
+		if(this.fastSwiped) {
+			this.fastSwiped = false;
+			return;
+		}
+
 		Animated.spring(
 			this.state.translateX,
 			{
@@ -235,10 +251,6 @@ class SwipeRow extends Component {
 		} else {
 			this.props.onRowOpen && this.props.onRowOpen(toValue);
 		}
-
-		// reset everything
-		this.swipeInitialX = null;
-		this.horizontalSwipeGestureBegan = false;
 	}
 
 	renderVisibleContent() {
