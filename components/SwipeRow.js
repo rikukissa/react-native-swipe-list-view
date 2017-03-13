@@ -49,7 +49,11 @@ class SwipeRow extends Component {
 
 	componentWillMount() {
 		this._panResponder = PanResponder.create({
+			onStartShouldSetPanResponder: (evt, gestureState) => true,
+			onStartShouldSetPanResponderCapture: (evt, gestureState) => true,
 			onMoveShouldSetPanResponder: (e, gs) => this.handleOnMoveShouldSetPanResponder(e, gs),
+			onMoveShouldSetPanResponderCapture: (evt, gestureState) => true,
+			onPanResponderTerminationRequest: () => false,
 			onPanResponderMove: (e, gs) => this.handlePanResponderMove(e, gs),
 			onPanResponderRelease: (e, gs) => this.handlePanResponderEnd(e, gs),
 			onPanResponderTerminate: (e, gs) => this.handlePanResponderEnd(e, gs),
