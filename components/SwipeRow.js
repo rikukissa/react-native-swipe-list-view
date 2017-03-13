@@ -38,7 +38,6 @@ class SwipeRow extends Component {
 		this.swipeInitialX = null;
 		this.parentScrollEnabled = true;
 		this.ranPreview = false;
-		this.fastSwiped = false;
 		this.state = {
 			dimensionsSet: false,
 			hiddenHeight: 0,
@@ -97,19 +96,14 @@ class SwipeRow extends Component {
 
 	handleOnMoveShouldSetPanResponder(e, gs) {
 		const { dx } = gs;
-
 		return Math.abs(dx) > DIRECTIONAL_DISTANCE_CHANGE_THRESHOLD;
 	}
 
 	handlePanResponderMove(e, gestureState) {
-
 		const { dx, dy, vx } = gestureState;
 		const absDx = Math.abs(dx);
 		const absDy = Math.abs(dy);
 
-		if(this.fastSwiped) {
-			return;
-		}
 
 		// this check may not be necessary because we don't capture the move until we pass the threshold
 		// just being extra safe here
@@ -184,6 +178,12 @@ class SwipeRow extends Component {
 	}
 	handlePanResponderEnd(e, gestureState) {
 		const { dx, dy, vx } = gestureState;
+
+		if (this.swipeInitialX === null) {
+			// set tranlateX value when user started swiping
+			this.swipeInitialX = this.state.translateX._value
+		}
+
 		const newDX = this.swipeInitialX + dx;
 
 		this.props.onRowMoveEnd(newDX);
