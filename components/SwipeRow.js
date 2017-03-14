@@ -25,10 +25,10 @@ function elastic(value, elasticity = 30) {
  * If you are rendering a SwipeRow explicitly you must pass the SwipeRow exactly two children.
  * The first will be rendered behind the second.
  * e.g.
-  <SwipeRow>
-      <View style={hiddenRowStyle} />
-      <View style={visibleRowStyle} />
-  </SwipeRow>
+	<SwipeRow>
+			<View style={hiddenRowStyle} />
+			<View style={visibleRowStyle} />
+	</SwipeRow>
  */
 class SwipeRow extends Component {
 
@@ -48,10 +48,10 @@ class SwipeRow extends Component {
 
 	componentWillMount() {
 		this._panResponder = PanResponder.create({
-			onStartShouldSetPanResponder: (evt, gestureState) => true,
-			onStartShouldSetPanResponderCapture: (evt, gestureState) => true,
+			onStartShouldSetPanResponder: (e, gs) => this.onStart(e, gs),
+			onStartShouldSetPanResponderCapture: (e, gs) => this.onStart(e, gs),
 			onMoveShouldSetPanResponder: (e, gs) => this.handleOnMoveShouldSetPanResponder(e, gs),
-			onMoveShouldSetPanResponderCapture: (evt, gestureState) => true,
+			onMoveShouldSetPanResponderCapture: (e, gs) => this.handleOnMoveShouldSetPanResponder(e, gs),
 			onPanResponderTerminationRequest: () => false,
 			onPanResponderMove: (e, gs) => this.handlePanResponderMove(e, gs),
 			onPanResponderRelease: (e, gs) => this.handlePanResponderEnd(e, gs),
@@ -83,7 +83,10 @@ class SwipeRow extends Component {
 			});
 		}
 	}
-
+	onStart(e, gs) {
+		this.animating = false;
+		return this.handleOnMoveShouldSetPanResponder(e, gs);
+	}
 	onRowPress() {
 		if (this.props.onRowPress) {
 			this.props.onRowPress();
@@ -96,6 +99,7 @@ class SwipeRow extends Component {
 
 	handleOnMoveShouldSetPanResponder(e, gs) {
 		const { dx } = gs;
+
 		return Math.abs(dx) > DIRECTIONAL_DISTANCE_CHANGE_THRESHOLD;
 	}
 
@@ -104,6 +108,9 @@ class SwipeRow extends Component {
 		const absDx = Math.abs(dx);
 		const absDy = Math.abs(dy);
 
+		if(this.animating) {
+			return;
+		}
 
 		// this check may not be necessary because we don't capture the move until we pass the threshold
 		// just being extra safe here
@@ -125,6 +132,7 @@ class SwipeRow extends Component {
 				// set tranlateX value when user started swiping
 				this.swipeInitialX = this.state.translateX._value
 			}
+
 			this.horizontalSwipeGestureBegan = true;
 
 			let newDX = this.swipeInitialX + dx;
@@ -133,50 +141,57 @@ class SwipeRow extends Component {
 			else if (this.props.disableRightSwipe && newDX > 0) { newDX = 0; }
 			// Maximum swipe distance
 			else if (this.props.maxLeftSwipeDistance && newDX > this.props.maxLeftSwipeDistance) {
-				newDX = this.props.maxLeftSwipeDistance;
+				if (this.props.elasticOverscroll) {
+					newDX = this.props.maxLeftSwipeDistance + elastic(newDX - this.props.maxLeftSwipeDistance);
+
+					if (this.onOverscrollLeft && newDX > this.props.maxLeftSwipeDistance + this.props.overscrollDistanceLeft) {
+						this.onOverscrollLeft()
+					}
+
+				}
+				else {
+					newDX = this.props.maxLeftSwipeDistance;
+				}
 			}
 			else if (this.props.maxRightSwipeDistance && newDX < this.props.maxRightSwipeDistance) {
-				newDX = this.props.maxRightSwipeDistance;
+				if (this.props.elasticOverscroll) {
+					newDX = this.props.maxRightSwipeDistance - elastic(this.props.maxRightSwipeDistance - newDX);
+
+					if (this.onOverscrollRight && newDX < -this.props.maxRightSwipeDistance + this.props.overScrollDistanceRight) {
+						this.onOverscrollRight()
+					}
+
+				}
+				else {
+					newDX = this.props.maxRightSwipeDistance;
+				}
 			}
 
-			if (this.props.onFastSwipeLeft && newDX < 0 && vx <= this.props.fastSwipeVelocity * -1) {
-				newDX = this.props.rightOpenValue;
+			if (this.props.onFastSwipeLeft && newDX < 0 && vx >= this.props.fastSwipeVelocity) {
 				this.props.onFastSwipeLeft(newDX, vx);
-				this.springTo(newDX);
-				this.fastSwiped = true;
-
+				this.springTo(0);
+				return;
 			} else if (this.props.onFastSwipeRight && newDX > 0 && vx >= this.props.fastSwipeVelocity) {
 				newDX = this.props.leftOpenValue;
 				this.props.onFastSwipeRight(newDX, vx);
 				this.springTo(newDX);
-				this.fastSwiped = true;
-			// Reverse
-			} else if (this.props.onFastSwipeReverseLeft && newDX > 0 && vx <= this.props.fastSwipeVelocity * -1) {
-				newDX = 0;
-				this.props.onFastSwipeReverseLeft(newDX, vx);
-				this.springTo(newDX);
-				this.fastSwiped = true;
-
-			} else if (this.props.onFastSwipeReverseRight && newDX < 0 && vx >= this.props.fastSwipeVelocity) {
-				newDX = 0;
-				this.props.onFastSwipeReverseRight(newDX, vx);
-				this.springTo(newDX);
-				this.fastSwiped = true;
-			} else {
-				this.state.translateX.setValue(newDX);
+				return;
 			}
 
+			this.state.translateX.setValue(newDX);
 			this.props.onRowMove(newDX);
 		}
 	}
 	springTo(value) {
-		Animated.spring(this.state.translateX, {
-			toValue: value,
-			friction: 10,
-			tension: 100,
-		}).start();
+		this.animating = true;
+		this.props.onRowMoveEnd(value);
+		this.manuallySwipeRow(value);
 	}
 	handlePanResponderEnd(e, gestureState) {
+		if(this.animating) {
+			return;
+		}
+
 		const { dx, dy, vx } = gestureState;
 
 		if (this.swipeInitialX === null) {
@@ -201,7 +216,7 @@ class SwipeRow extends Component {
 		if (this.state.translateX._value >= 0) {
 			if(this.state.translateX._value > this.props.maxLeftSwipeDistance) {
 				toValue = this.state.hiddenWidth;
-		  } else if (this.state.translateX._value > this.props.leftOpenValue / 2) {
+			} else if (this.state.translateX._value > this.props.leftOpenValue / 2) {
 				// we're more than halfway
 				toValue = this.props.leftOpenValue;
 			}
@@ -226,15 +241,6 @@ class SwipeRow extends Component {
 	}
 
 	manuallySwipeRow(toValue) {
-		// reset everything
-		this.swipeInitialX = null;
-		this.horizontalSwipeGestureBegan = false;
-
-		if(this.fastSwiped) {
-			this.fastSwiped = false;
-			return;
-		}
-
 		Animated.spring(
 			this.state.translateX,
 			{
@@ -248,6 +254,7 @@ class SwipeRow extends Component {
 			} else {
 				this.props.onRowDidOpen && this.props.onRowDidOpen();
 			}
+			this.animating = false;
 		});
 
 		if (toValue === 0) {
@@ -255,6 +262,10 @@ class SwipeRow extends Component {
 		} else {
 			this.props.onRowOpen && this.props.onRowOpen(toValue);
 		}
+
+		// reset everything
+		this.swipeInitialX = null;
+		this.horizontalSwipeGestureBegan = false;
 	}
 
 	renderVisibleContent() {
@@ -364,10 +375,10 @@ SwipeRow.propTypes = {
 	 * to keep references to open rows.
 	 */
 	onRowOpen: PropTypes.func,
-  /**
+	/**
 	 * Called when a swipe row has animated open.
 	 */
-  onRowDidOpen: PropTypes.func,
+	onRowDidOpen: PropTypes.func,
 	/**
 	 * TranslateX value for opening the row to the left (positive number)
 	 */
@@ -412,10 +423,10 @@ SwipeRow.propTypes = {
 	 * Called when a swipe row is animating closed
 	 */
 	onRowClose: PropTypes.func,
-  /**
-   * Called when a swipe row has animated closed
-   */
-  onRowDidClose: PropTypes.func,
+	/**
+	 * Called when a swipe row has animated closed
+	 */
+	onRowDidClose: PropTypes.func,
 	/**
 	 * Styles for the parent wrapper View of the SwipeRow
 	 */
